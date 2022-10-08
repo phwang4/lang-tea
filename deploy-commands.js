@@ -9,6 +9,13 @@ const commands = [
       option.setName('kanji')
         .setDescription('The kanji to look up')
         .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('kana')
+    .setDescription('Replies with the definitions for a word written in kana.')
+    .addStringOption(option => 
+      option.setName('kana')
+        .setDescription('The kana to look up')
+        .setRequired(true)),
 ]
 	.map(command => command.toJSON());
 

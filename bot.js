@@ -16,7 +16,7 @@ client.once('ready', () => {
   });
 });
 
-function getMeanings(kanji) {
+function getMeaningsForKanji(kanji) {
   let meanings = [];
   return new Promise((resolve, reject) => {
     db.get(`SELECT * FROM 'kanjis' WHERE kanji='${kanji}'`, (err, row) => {
@@ -39,22 +39,56 @@ function getMeanings(kanji) {
   })
 }
 
+function getMeaningsForKana(kana) {
+  let meanings = [];
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'kanas' WHERE kana='${kana}'`, (err, row) => {
+      if (err || !row) {
+        reject('Error looking up kana')
+        return;
+      }
+      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
+        for (let row of rows) {
+          meanings.push(row.meaning)
+        }
+        if (err1 || !rows) {
+          reject(`Error looking up meaning`);
+          return;
+        } else {
+          resolve(meanings);
+        }
+      });
+    });
+  })
+}
+
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const { commandName, options } = interaction;
-  // console.log(interaction);
-  console.log(options.getString('kanji'));
 
-  if (commandName === 'kanji') {
-    let kanji = options.getString('kanji');
-    try {
-      let meanings = await getMeanings(kanji);
-      await interaction.reply(`**Definitions for ${kanji}:**\n${meanings.join('\n')}`);
-    } catch (e) {
-      await interaction.reply(`Could not find meanings for the kanji: ${kanji}`)
-    }
+
+  switch (commandName) {
+    case 'kanji':
+      let kanji = options.getString('kanji');
+      try {
+        let meanings = await getMeaningsForKanji(kanji);
+        await interaction.reply(`**Definitions for ${kanji}:**\n${meanings.join('\n')}`);
+      } catch (e) {
+        await interaction.reply(`Could not find meanings for the kanji: ${kanji}`)
+      }
+      break;
+    case 'kana':
+      let kana = options.getString('kana');
+      try {
+        let meanings = await getMeaningsForKana(kana);
+        await interaction.reply(`**Definitions for ${kana}:**\n${meanings.join('\n')}`);
+      } catch (e) {
+        await interaction.reply(`Could not find meanings for the kana: ${kana}`)
+      }
+      break;
   }
+
 })
 
 client.login(token);
