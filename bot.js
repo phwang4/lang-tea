@@ -102,22 +102,23 @@ client.on('interactionCreate', async interaction => {
         value: '\u200B' },
       );
 
+      // reply with embed and wait for reactions
       const message = await interaction.reply({ embeds: [exampleEmbed], fetchReply: true });
       message.react('✅');
-      
       const filter = (reaction, user) => {
         return reaction.emoji.name === '✅' && !user.bot;
       };
-
-      const collector = message.createReactionCollector({ filter, max: 2, time: 15000 });
-
+      const collector = message.createReactionCollector({ filter, time: 15000 });
       collector.on('collect', (reaction, user) => {
         console.log(`Collected ${reaction.emoji.name} from ${user.tag}`);
       });
-      collector.on('end', collected => {
-        console.log(`Collected ${collected.size} items`);
-      });
 
+      // send another message afterward
+      const channel = client.channels.cache.get(interaction.channelId)
+      channel.send(':tea::tea::tea::tea::tea::tea::tea::tea::tea::tea::tea::tea:')
+        .then(async msg => {
+          await msg.edit(':tea::tea::tea::tea::tea::tea::tea::tea::tea::tea:<:empty:1028438609520508980><:empty:1028438609520508980>')
+        })
   }
 
 })
