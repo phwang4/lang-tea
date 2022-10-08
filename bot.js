@@ -97,13 +97,15 @@ client.on('interactionCreate', async interaction => {
       }
       break;
     case 'test':
+      let usersInPlay = [];
       const exampleEmbed = new EmbedBuilder()
       .setColor(0x0099FF)
       .setTitle('The Hibiscus Teaword will start!')
       .setDescription('To participate, **react** on ✅')
       .addFields(
-        { name: '**Goal:** Be the fastest to write the kanji for the definition ',
-        value: '\u200B' },
+        { name: '\u200B',
+        // needs to be one line
+        value: `**Goal:** Be the fastest to write the kanji for the definition.\n\n\n Settings during this cooldown:\n$pts <number> to redefine the number of points to reach (between 1 and 100. Current: 5)\n$time <number> to redefine the minimum response time, in seconds (between 3 and 50. Current: 10)\n\n\n You can stop the game for everyone with $exitgame`},
       );
 
       // reply with embed and wait for reactions
@@ -114,7 +116,8 @@ client.on('interactionCreate', async interaction => {
       };
       const collector = message.createReactionCollector({ filter, time: 15000 });
       collector.on('collect', (reaction, user) => {
-        console.log(`Collected ${reaction.emoji.name} from ${user.tag}`);
+        console.log(`Collected ${reaction.emoji.name} from ${user.id}`);
+        usersInPlay.push(user.id);
       });
 
       // send another message afterward and constantly update it
@@ -132,9 +135,30 @@ client.on('interactionCreate', async interaction => {
         })
         .then(async () => {
           await delay(2000);
-          channel.send('No participants... I would have had time to prepare a fabulous tea.');
+          if (!usersInPlay.length) {
+            channel.send('No participants... I would have had time to prepare a fabulous tea.');
+          } else {
+            channel.send('Starting!')
+          }
+          collector.stop();
+          const msgFilter = (msg) => {
+            /* For some reason, the bot's messages come as the user who sent the initial command but with bot set to true*/
+            return usersInPlay.includes(msg.author.id) && !msg.author.bot;
+          }
+          const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
+
+          msgCollector.on('collect', (msg) => {
+            if (msg.content === '$exitgame') {
+              channel.send('All that for this...');
+              msgCollector.stop();
+            } else {
+              // Do game
+              console.log(`Collected ${msg.content}`)
+            }
+          })
         })
-      }
+      break;
+    }
 
 })
 
