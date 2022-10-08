@@ -24,9 +24,6 @@ bot.on('ready', function (evt) {
 });
 
 
-
-let users = {};
-
 function sendMessage(channelID, message) {
   bot.sendMessage({
     to: channelID,
@@ -36,15 +33,16 @@ function sendMessage(channelID, message) {
 
 bot.on('message', function (user, userID, channelID, message, evt) {
   if (message.substring(0,1) === '!') {
+
     var args = message.substring(1).split(' ');
     var cmd = args[0];
 
     args = args.splice(1);
     switch(cmd) {
       case 'ping':
-        bot.sendMessage(channelID, 'Pong!');
+        console.log(`user ${user}, message: ${message}, channelId ${channelID} `);
+        sendMessage(channelID, 'Pong!');
         break;
     }
-    console.log(message);
   }
 });

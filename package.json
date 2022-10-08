@@ -4,8 +4,12 @@
   "description": "",
   "main": "bot.js",
   "authors": "Patrick Hwang, Noah Goldman",
+  "scripts": {
+    "postinstall": "patch-package"
+  },
   "dependencies": {
     "discord.io": "https://github.com/woor/discord.io/tarball/gateway_v6",
+    "patch-package": "^6.4.7",
     "winston": "^3.8.2"
   }
 }
