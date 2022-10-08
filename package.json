@@ -1,0 +1,11 @@
+{
+  "name": "Enemy's Bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "bot.js",
+  "authors": "Patrick Hwang, Noah Goldman",
+  "dependencies": {
+    "discord.io": "https://github.com/woor/discord.io/tarball/gateway_v6",
+    "winston": "^3.8.2"
+  }
+}
