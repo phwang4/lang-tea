@@ -9,9 +9,13 @@
   },
   "dependencies": {
     "discord.io": "https://github.com/woor/discord.io/tarball/gateway_v6",
+    "discord.js": "^14.5.0",
     "patch-package": "^6.4.7",
     "path": "^0.12.7",
     "sqlite3": "^5.1.2",
     "winston": "^3.8.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.25.0"
   }
 }

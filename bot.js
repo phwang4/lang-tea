@@ -1,77 +1,61 @@
-const Discord = require('discord.io');
-const logger = require('winston');
-const auth = require('./auth.json');
+// Require the necessary discord.js classes
+const { Client, GatewayIntentBits } = require('discord.js');
+const { token } = require('./config.json');
 const sqlite3 = require('sqlite3').verbose();
 const path =  require('path');
 
-// Configure logger settings
-
-logger.remove(logger.transports.Console);
-logger.add(new logger.transports.Console, {
-  colorize: true
-});
-logger.level = 'debug';
+// Create a new client instance
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 let db;
 
-// Initialize Discord Bot
-
-const bot = new Discord.Client({
-  token: auth.token,
-  autorun: true
-});
-
-bot.on('ready', function (evt) {
-  logger.info('Connected');
-  logger.info('Logged in as: ');
-  logger.info(bot.username + ' - (' + bot.id + ')');
+// When the client is ready, run this code (only once)
+client.once('ready', () => {
+	console.log('Ready!');
   db = new sqlite3.Database(path.join(__dirname, 'jmdict.sqlite'), sqlite3.OPEN_READONLY, () => {
     console.log('database loaded');
   });
 });
 
-
-function sendMessage(channelID, message) {
-  bot.sendMessage({
-    to: channelID,
-    message
-  });
-}
-
 function getMeanings(kanji) {
   let meanings = [];
   return new Promise((resolve, reject) => {
     db.get(`SELECT * FROM 'kanjis' WHERE kanji='${kanji}'`, (err, row) => {
-      console.log(row.ent_seq);
+      if (err || !row) {
+        reject('Error looking up kanji')
+        return;
+      }
       db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
         for (let row of rows) {
           meanings.push(row.meaning)
         }
-        console.log(meanings);
-        if (err || err1) {
-          reject(`Error in getMeanings`);
+        if (err1 || !rows) {
+          reject(`Error looking up meaning`);
+          return;
         } else {
           resolve(meanings);
         }
       });
     });
   })
-
 }
 
-bot.on('message', async function (user, userID, channelID, message, evt) {
-  if (message.substring(0,1) === '!') {
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-    var args = message.substring(1).split(' ');
-    var cmd = args[0];
+  const { commandName, options } = interaction;
+  // console.log(interaction);
+  console.log(options.getString('kanji'));
 
-    args = args.splice(1);
-    switch(cmd) {
-      case 'kanji':
-        console.log(`user ${user}, message: ${message}, channelId ${channelID} `);
-        let meanings = await getMeanings(args[0]);
-        console.log(meanings);
-        sendMessage(channelID, meanings);
-        break;
+  if (commandName === 'kanji') {
+    let kanji = options.getString('kanji');
+    try {
+      let meanings = await getMeanings(kanji);
+      await interaction.reply(`**Definitions for ${kanji}:**\n${meanings.join('\n')}`);
+    } catch (e) {
+      await interaction.reply(`Could not find meanings for the kanji: ${kanji}`)
     }
   }
-});
+})
+
+client.login(token);
+
