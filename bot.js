@@ -1,11 +1,14 @@
 // Require the necessary discord.js classes
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { token } = require('./config.json');
 const sqlite3 = require('sqlite3').verbose();
 const path =  require('path');
 
 // Create a new client instance
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, 
+                                      GatewayIntentBits.GuildMessages, 
+                                      GatewayIntentBits.MessageContent, 
+                                      GatewayIntentBits.GuildMessageReactions] });
 let db;
 
 // When the client is ready, run this code (only once)
@@ -16,6 +19,7 @@ client.once('ready', () => {
   });
 });
 
+// TODO: add readings and conjugations for kanji as separate optional parameters
 function getMeaningsForKanji(kanji) {
   let meanings = [];
   return new Promise((resolve, reject) => {
@@ -62,6 +66,7 @@ function getMeaningsForKana(kana) {
   })
 }
 
+
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -87,6 +92,32 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply(`Could not find meanings for the kana: ${kana}`)
       }
       break;
+    case 'test':
+      const exampleEmbed = new EmbedBuilder()
+      .setColor(0x0099FF)
+      .setTitle('The Hibiscus Teaword will start!')
+      .setDescription('To participate, **react** on ✅')
+      .addFields(
+        { name: '**Goal:** Be the fastest to write the kanji for the definition ',
+        value: '\u200B' },
+      );
+
+      const message = await interaction.reply({ embeds: [exampleEmbed], fetchReply: true });
+      message.react('✅');
+      
+      const filter = (reaction, user) => {
+        return reaction.emoji.name === '✅' && !user.bot;
+      };
+
+      const collector = message.createReactionCollector({ filter, max: 2, time: 15000 });
+
+      collector.on('collect', (reaction, user) => {
+        console.log(`Collected ${reaction.emoji.name} from ${user.tag}`);
+      });
+      collector.on('end', collected => {
+        console.log(`Collected ${collected.size} items`);
+      });
+
   }
 
 })

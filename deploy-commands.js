@@ -16,6 +16,9 @@ const commands = [
       option.setName('kana')
         .setDescription('The kana to look up')
         .setRequired(true)),
+  new SlashCommandBuilder()
+      .setName('test')
+      .setDescription('WIP test command')
 ]
 	.map(command => command.toJSON());
 
