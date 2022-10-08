@@ -7,4 +7,6 @@ Functions:
 
  For Devs:
  Run with "node bot.js"
+
+ jmdict is too large so you'll have to download it manually from https://github.com/PSeitz/japanese-dictionary/releases/tag/1.0
  

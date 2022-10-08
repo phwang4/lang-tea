@@ -1,6 +1,8 @@
 const Discord = require('discord.io');
 const logger = require('winston');
 const auth = require('./auth.json');
+const sqlite3 = require('sqlite3').verbose();
+const path =  require('path');
 
 // Configure logger settings
 
@@ -9,6 +11,7 @@ logger.add(new logger.transports.Console, {
   colorize: true
 });
 logger.level = 'debug';
+let db;
 
 // Initialize Discord Bot
 
@@ -21,6 +24,9 @@ bot.on('ready', function (evt) {
   logger.info('Connected');
   logger.info('Logged in as: ');
   logger.info(bot.username + ' - (' + bot.id + ')');
+  db = new sqlite3.Database(path.join(__dirname, 'jmdict.sqlite'), sqlite3.OPEN_READONLY, () => {
+    console.log('database loaded');
+  });
 });
 
 
@@ -31,7 +37,28 @@ function sendMessage(channelID, message) {
   });
 }
 
-bot.on('message', function (user, userID, channelID, message, evt) {
+function getMeanings(kanji) {
+  let meanings = [];
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'kanjis' WHERE kanji='${kanji}'`, (err, row) => {
+      console.log(row.ent_seq);
+      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
+        for (let row of rows) {
+          meanings.push(row.meaning)
+        }
+        console.log(meanings);
+        if (err || err1) {
+          reject(`Error in getMeanings`);
+        } else {
+          resolve(meanings);
+        }
+      });
+    });
+  })
+
+}
+
+bot.on('message', async function (user, userID, channelID, message, evt) {
   if (message.substring(0,1) === '!') {
 
     var args = message.substring(1).split(' ');
@@ -39,9 +66,11 @@ bot.on('message', function (user, userID, channelID, message, evt) {
 
     args = args.splice(1);
     switch(cmd) {
-      case 'ping':
+      case 'kanji':
         console.log(`user ${user}, message: ${message}, channelId ${channelID} `);
-        sendMessage(channelID, 'Pong!');
+        let meanings = await getMeanings(args[0]);
+        console.log(meanings);
+        sendMessage(channelID, meanings);
         break;
     }
   }
