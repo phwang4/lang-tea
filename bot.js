@@ -66,6 +66,10 @@ function getMeaningsForKana(kana) {
   })
 }
 
+function delay(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -113,13 +117,24 @@ client.on('interactionCreate', async interaction => {
         console.log(`Collected ${reaction.emoji.name} from ${user.tag}`);
       });
 
-      // send another message afterward
+      // send another message afterward and constantly update it
       const channel = client.channels.cache.get(interaction.channelId)
-      channel.send(':tea::tea::tea::tea::tea::tea::tea::tea::tea::tea::tea::tea:')
+      let numTeas = 12;
+      let teaMsg;
+      channel.send(':tea:'.repeat(numTeas))
         .then(async msg => {
-          await msg.edit(':tea::tea::tea::tea::tea::tea::tea::tea::tea::tea:<:empty:1028438609520508980><:empty:1028438609520508980>')
+          while (numTeas > 0) {
+            await delay(2000);
+            numTeas -= 2;
+            teaMsg = ':tea:'.repeat(numTeas) + '<:empty:1028438609520508980>'.repeat(12 - numTeas)
+            await msg.edit(teaMsg)
+          }
         })
-  }
+        .then(async () => {
+          await delay(2000);
+          channel.send('No participants... I would have had time to prepare a fabulous tea.');
+        })
+      }
 
 })
 
