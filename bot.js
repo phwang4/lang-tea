@@ -1,18 +1,33 @@
 // Require the necessary discord.js classes
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const { token } = require('./config.json');
 const sqlite3 = require('sqlite3').verbose();
 const path =  require('path');
 const stringSimilarity = require("string-similarity");
+const {
+  boundaries,
+  defaultNumTeas, 
+  hibiTeaEmbed
+} = require('./constants');
+
+let { 
+  settings
+} = require('./settings');
 
 // Create a new client instance
 const client = new Client({ intents: [GatewayIntentBits.Guilds, 
                                       GatewayIntentBits.GuildMessages, 
                                       GatewayIntentBits.MessageContent, 
                                       GatewayIntentBits.GuildMessageReactions] });
-const defaultNumTeas = 10; // lower when debugging
-const pointsToWin = 15;
-let commonness = 20;
+
+/* For keeping track of things.*/
+let addPoint;
+let currentPoints;
+let solutions = [];
+let usersInPlay;
+let word;
+let hasStarted;
+
 let db;
 
 // When the client is ready, run this code (only once)
@@ -93,18 +108,18 @@ function delay(delayMs) {
 
 // update embed for commonness number
 function getRandomMeaningFromDict() {
-  let solution;
+  let solutions;
   return new Promise((resolve, reject) => {
     if (Math.random() > 0) {
-      db.get(`SELECT * FROM 'kanjis' WHERE commonness > ${commonness} ORDER BY RANDOM()`, async (err, row) => {
+      db.get(`SELECT * FROM 'kanjis' WHERE commonness > ${settings.commonness} ORDER BY RANDOM()`, async (err, row) => {
         if (err || !row) {
           reject('Error looking up kanji')
           return;
         } 
         try {
-          solution = await getMeaningsForEntSeq(row.ent_seq);
+          solutions = await getMeaningsForEntSeq(row.ent_seq);
           // row.id -> kanji_readings.kanji_id -> kanji_readings.kana_id??
-          resolve({word: row.kanji, solution});
+          resolve({word: row.kanji, solutions});
         } catch(e) {
           reject(e)
         }
@@ -112,14 +127,14 @@ function getRandomMeaningFromDict() {
 
       });
     } else { // Not reached atm, some ent_seq are in both kana and kanji dict in which case we only want the kanji version
-      db.get(`SELECT * FROM 'kanas' WHERE commonness > ${commonness} ORDER BY RANDOM()`, async (err, row) => {
+      db.get(`SELECT * FROM 'kanas' WHERE commonness > ${settings.commonness} ORDER BY RANDOM()`, async (err, row) => {
         if (err || !row) {
           reject('Error looking up kana')
           return;
         } 
         try {
-          solution = await getMeaningsForEntSeq(row.ent_seq);
-          resolve({word: row.kana, solution});
+          solutions = await getMeaningsForEntSeq(row.ent_seq);
+          resolve({word: row.kana, solutions});
         } catch(e) {
           reject(e)
         }
@@ -153,7 +168,6 @@ function getRandomMeaningFromDict() {
   });
 }
 
-
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -181,7 +195,7 @@ client.on('interactionCreate', async interaction => {
       break;
     case 'randm':
       try {
-        const {solution, word} = await getRandomMeaningFromDict();
+        const {solutions, word} = await getRandomMeaningFromDict();
         await interaction.reply(`Here is a random word with one meaning: ${word} - ${solution.join(', ')}`);
       } catch (e) {
         await interaction.reply(`Could not find a random meaning. ${e.message}`)
@@ -189,20 +203,14 @@ client.on('interactionCreate', async interaction => {
       break;
     case 'wordgames':
       if (subCommand === 'hibitea') {} // wrap this whole thing when u make another game
-      let usersInPlay = [];
-      let word, solutions;
-      const exampleEmbed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle('The Hibiscus Teaword will start!')
-      .setDescription('To participate, **react** on ✅')
-      .addFields(
-        { name: '\u200B',
-        // needs to be one line
-        value: `**Goal:** Be the fastest to write the kanji for the definition.\n\n\n Settings during this cooldown:\n$pts <number> to redefine the number of points to reach (between 1 and 100. Current: 5)\n$time <number> to redefine the minimum response time, in seconds (between 3 and 50. Current: 10)\n\n\n You can stop the game for everyone with $exitgame`},
-      );
+      usersInPlay = new Map();
+      hasStarted = false;
+      addPoint = false;
+      currentPoints = 0;
+      const channel = client.channels.cache.get(interaction.channelId)
 
       // reply with embed and wait for reactions
-      const message = await interaction.reply({ embeds: [exampleEmbed], fetchReply: true });
+      const message = await interaction.reply({ embeds: [hibiTeaEmbed], fetchReply: true });
       message.react('✅');
       const filter = (reaction, user) => {
         return reaction.emoji.name === '✅' && !user.bot;
@@ -210,11 +218,19 @@ client.on('interactionCreate', async interaction => {
       const collector = message.createReactionCollector({ filter, time: 15000 });
       collector.on('collect', (reaction, user) => {
         console.log(`Collected ${reaction.emoji.name} from ${user.id}`);
-        usersInPlay.push(user.id);
+        usersInPlay.set(user.id, 0);
       });
 
+      const msgFilter = (msg) => {
+        /* For some reason, the bot's messages come as the user who sent the initial command but with bot set to true*/
+        return usersInPlay.has(msg.author.id) && !msg.author.bot;
+      }
+      const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
+
+      let answers = [];
+      collectMessages(msgCollector, channel);
+
       // send another message afterward and constantly update it
-      const channel = client.channels.cache.get(interaction.channelId)
       let numTeas = defaultNumTeas;
       let teaMsg;
       channel.send(':tea:'.repeat(numTeas))
@@ -228,72 +244,33 @@ client.on('interactionCreate', async interaction => {
         })
         .then(async () => {
           await delay(2000);
-          if (!usersInPlay.length) {
+          if (!usersInPlay.size) {
             channel.send('No participants... I would have had time to prepare a fabulous tea.');
             collector.stop();
             return;
           } else {
-            channel.send('Starting!')
+            channel.send('Starting!');
+            hasStarted = true;
+            console.log(`Users are ${[...usersInPlay.entries()]}`);
           }
           collector.stop();
-          const msgFilter = (msg) => {
-            /* For some reason, the bot's messages come as the user who sent the initial command but with bot set to true*/
-            return usersInPlay.includes(msg.author.id) && !msg.author.bot;
-          }
-          const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
-
-          let answers = [];
-          let addPoint = false;
-          let points = 0;
-
-          msgCollector.on('collect', async (msg) => {
-            if (msg.content === '$exitgame') {
-              channel.send('All that for this...');
-              msgCollector.stop();
-              points = pointsToWin;
-            } else {
-              console.log(`Collected ${msg.content}, solution is ${solutions}`)
-              let similarity = 0;
-              let maxSimilarityMap = {max: 0, word: ''};
-              for (meaning of solutions) {
-                similarity = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
-                if (similarity >= .75) {
-                  addPoint = true;
-                  console.log(`We thought you said ${meaning} at similarity ${similarity}`)
-                              // TODO: react to msg and give points to correct person
-                  time = 0;
-                  break;
-                } else { // for logging
-                  if (similarity > maxSimilarityMap.max) {
-                    maxSimilarityMap.max = similarity;
-                    maxSimilarityMap.word = msg.content;
-                  }
-                }
-              }
-              // if (maxSimilarityMap.max) {
-              // channel.send(`similarity is ${maxSimilarityMap.max}`);}
-            }
-          })
-          let time = 10;
 
           // do game until msgCollector stops or maxPoints reached
-          while (points < pointsToWin) {
-            time = 10;
-            let temp = await getRandomMeaningFromDict();
-            word = temp.word;
-            solutions = temp.solution;
-            let timerMsg = await channel.send(':tea:'.repeat(time))
+          while (currentPoints < settings.pointsToWin) {
+            settings.answerTime = 10;
+            ({ solutions, word} = await getRandomMeaningFromDict());
+            let timerMsg = await channel.send(':tea:'.repeat(settings.answerTime))
             channel.send(`Find one meaning for the word: ${word}`)
-            while (time > 0) {
+            while (settings.answerTime > 0) {
               await delay(1000);
-              if (time != 0) {
-                time -= 1;
+              if (settings.answerTime != 0) {
+                settings.answerTime -= 1;
               }
-              teaMsg = ':tea:'.repeat(time) + '<:empty:1028438609520508980>'.repeat(10 - time)
+              teaMsg = ':tea:'.repeat(settings.answerTime) + '<:empty:1028438609520508980>'.repeat(10 - settings.answerTime)
               await timerMsg.edit(teaMsg)
             }
             if (addPoint) {
-              points++;
+              currentPoints++;
               channel.send(`good job!`); // also send potential solutions
               addPoint = false;
             }
@@ -306,6 +283,53 @@ client.on('interactionCreate', async interaction => {
       break;
     }
 });
+
+function playHibiscusTea() {
+  
+}
+
+function collectMessages(msgCollector, channel) {
+  msgCollector.on('collect', async (msg) => {
+    console.log(`hasStarted: ${hasStarted} and msg is ${msg.content}`);
+    if (hasStarted) {
+      if (msg.content === '$exitgame') {
+        channel.send('All that for this...');
+        msgCollector.stop();
+        currentPoints = settings.pointsToWin;
+      } else {
+        let similarity = 0;
+        let maxSimilarityMap = {max: 0, word: ''};
+        for (meaning of solutions) {
+          similarity = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
+          if (similarity >= .75) {
+            addPoint = true;
+            // TODO: react to msg and give points to correct person
+            settings.answerTime = 0;
+            break;
+          }
+        }
+      }
+    } else {
+      let args = msg.content.split(' ')
+      let cmd = args[0];
+      switch(cmd) {
+        case '$pts':
+          if (args[1] && args[1] >=1 && args[1] <= 100) {
+            settings.pointsToWin = args[1];
+            channel.send(`Number of points needed to win is now: ${args[1]}`);
+          }
+          break;
+        case '$time':
+          console.log('reached time');
+          break;
+        case '$cmn':
+          console.log('reached cmn');
+          break;
+      }
+    }
+  })
+}
+
 
 client.login(token);
 
