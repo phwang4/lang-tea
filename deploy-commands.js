@@ -20,8 +20,12 @@ const commands = [
       .setName('randm')
       .setDescription('Replies with a random meaning.'),
   new SlashCommandBuilder()
-      .setName('test')
-      .setDescription('WIP test command'),
+      .setName('wordgames')
+      .setDescription('Mudae tea-like game for Japanese-English definitions')
+      .addSubcommand(subCommand => 
+        subCommand
+          .setName('hibitea')
+          .setDescription('Mudae tea-like game for Japanese-English definitions'))
 ]
 	.map(command => command.toJSON());
 

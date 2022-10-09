@@ -3,6 +3,7 @@ const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { token } = require('./config.json');
 const sqlite3 = require('sqlite3').verbose();
 const path =  require('path');
+const stringSimilarity = require("string-similarity");
 
 // Create a new client instance
 const client = new Client({ intents: [GatewayIntentBits.Guilds, 
@@ -107,7 +108,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const { commandName, options } = interaction;
-
+  const subCommand = options._subcommand;
 
   switch (commandName) {
     case 'kanji':
@@ -136,9 +137,10 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply(`Could not find a random meaning. ${e.message}`)
       }
       break;
-    case 'test':
+    case 'wordgames':
+      if (subCommand === 'hibitea') {} // wrap this whole thing when u make another game
       let usersInPlay = [];
-      let word, solution;
+      let word, solutions;
       const exampleEmbed = new EmbedBuilder()
       .setColor(0x0099FF)
       .setTitle('The Hibiscus Teaword will start!')
@@ -178,6 +180,8 @@ client.on('interactionCreate', async interaction => {
           await delay(2000);
           if (!usersInPlay.length) {
             channel.send('No participants... I would have had time to prepare a fabulous tea.');
+            collector.stop();
+            return;
           } else {
             channel.send('Starting!')
           }
@@ -189,17 +193,34 @@ client.on('interactionCreate', async interaction => {
           const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
 
           let answers = [];
-          msgCollector.on('collect', (msg) => {
+          msgCollector.on('collect', async (msg) => {
             if (msg.content === '$exitgame') {
               channel.send('All that for this...');
               msgCollector.stop();
             } else {
-              console.log(`Collected ${msg.content}, solution is ${solution}`)
-              if (solution.includes(msg.content)) {
-                // TODO: react to msg and give points to correct person
-                points++;
-                channel.send('good job!');
+              console.log(`Collected ${msg.content}, solution is ${solutions}`)
+              let similarity = 0;
+              let maxSimilarityMap = {max: 0, word: ''};
+              for (meaning of solutions) {
+                similarity = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
+                if (similarity >= .75) {
+                  points++;
+                  channel.send(`good job!`); // also send potential solutions
+                  console.log(`We thought you said ${meaning} at similarity ${similarity}`)
+                              // TODO: react to msg and give points to correct person
+                  channel.send(`All meanings are: \n${solutions.join('\n')}`);
+                  time = 1; // don't want to catch it while it's decrementing
+                  await delay(3000);
+                  break;
+                } else { // for logging
+                  if (similarity > maxSimilarityMap.max) {
+                    maxSimilarityMap.max = similarity;
+                    maxSimilarityMap.word = msg.content;
+                  }
+                }
               }
+              if (maxSimilarityMap.max)
+              // channel.send(`similarity is ${maxSimilarityMap.max}`);
             }
           })
           let points = 0;
@@ -211,7 +232,7 @@ client.on('interactionCreate', async interaction => {
             time = 10;
             let temp = await getRandomMeaningFromDict();
             word = temp.word;
-            solution = temp.solution;
+            solutions = temp.solution;
             let timerMsg = await channel.send(':tea:'.repeat(time))
             channel.send(`Find one meaning for the word: ${word}`)
             while (time > 0) {
