@@ -9,6 +9,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds,
                                       GatewayIntentBits.GuildMessages, 
                                       GatewayIntentBits.MessageContent, 
                                       GatewayIntentBits.GuildMessageReactions] });
+const defaultNumTeas = 4; // lower when debugging
 let db;
 
 // When the client is ready, run this code (only once)
@@ -70,6 +71,38 @@ function delay(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+function getRandomMeaningFromDict() {
+  let meaning;
+  let solution;
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'meanings' WHERE lang=0 ORDER BY RANDOM()`, (err, row) => {
+      if (err || !row) {
+        reject('Error looking up kana')
+        return;
+      } else {
+        meaning = row.meaning;
+      }
+      db.get(`SELECT * FROM 'kanjis' WHERE ent_seq=${row.ent_seq}`, (err1, kanjiRow) => {
+        if (err1) {
+          reject(`Error looking up meaning in kanji. ${meaning}`);
+          return;
+        } else if (!kanjiRow) {
+          db.get(`SELECT * FROM 'kanas' WHERE ent_seq=${row.ent_seq}`, (err1, kanaRow) => {
+            if (err1) {
+              reject(`Error looking up meaning in kana. ${meaning}`);
+              return;
+            } else {
+              resolve({meaning, solution: kanaRow.kana});
+            }
+          });
+        } else {
+          resolve({meaning, solution: kanjiRow.kanji});
+        }
+      });
+    });
+  })
+}
+
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -94,6 +127,14 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply(`**Definitions for ${kana}:**\n${meanings.join('\n')}`);
       } catch (e) {
         await interaction.reply(`Could not find meanings for the kana: ${kana}`)
+      }
+      break;
+    case 'randm':
+      try {
+        const {meaning, solution} = await getRandomMeaningFromDict();
+        await interaction.reply(`Here is a random word with one meaning: ${solution} - ${meaning}`);
+      } catch (e) {
+        await interaction.reply(`Could not find a random meaning. ${e.message}`)
       }
       break;
     case 'test':
@@ -122,14 +163,14 @@ client.on('interactionCreate', async interaction => {
 
       // send another message afterward and constantly update it
       const channel = client.channels.cache.get(interaction.channelId)
-      let numTeas = 12;
+      let numTeas = defaultNumTeas;
       let teaMsg;
       channel.send(':tea:'.repeat(numTeas))
         .then(async msg => {
           while (numTeas > 0) {
             await delay(2000);
             numTeas -= 2;
-            teaMsg = ':tea:'.repeat(numTeas) + '<:empty:1028438609520508980>'.repeat(12 - numTeas)
+            teaMsg = ':tea:'.repeat(numTeas) + '<:empty:1028438609520508980>'.repeat(defaultNumTeas - numTeas)
             await msg.edit(teaMsg)
           }
         })
@@ -147,20 +188,35 @@ client.on('interactionCreate', async interaction => {
           }
           const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
 
+          let answers = [];
           msgCollector.on('collect', (msg) => {
             if (msg.content === '$exitgame') {
               channel.send('All that for this...');
               msgCollector.stop();
             } else {
-              // Do game
               console.log(`Collected ${msg.content}`)
             }
           })
-        })
+          let points = 0;
+          let time = 5;
+          let randMeaning;
+
+          // do game until msgCollector stops or maxPoints reached
+          while (points < 5) {
+            let timerMsg = await channel.send(':tea:'.repeat(time))
+            randMeaning = await getRandomMeaningFromDict();
+            channel.send()
+            while (time > 0) {
+              await delay(1000);
+              time -= 1;
+              teaMsg = ':tea:'.repeat(numTeas) + '<:empty:1028438609520508980>'.repeat(5 - time)
+              await timerMsg.edit(teaMsg)
+            }
+          }
+        });
       break;
     }
-
-})
+});
 
 client.login(token);
 

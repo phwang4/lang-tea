@@ -17,8 +17,11 @@ const commands = [
         .setDescription('The kana to look up')
         .setRequired(true)),
   new SlashCommandBuilder()
+      .setName('randm')
+      .setDescription('Replies with a random meaning.'),
+  new SlashCommandBuilder()
       .setName('test')
-      .setDescription('WIP test command')
+      .setDescription('WIP test command'),
 ]
 	.map(command => command.toJSON());
 
