@@ -208,9 +208,9 @@ client.on('interactionCreate', async interaction => {
                   channel.send(`good job!`); // also send potential solutions
                   console.log(`We thought you said ${meaning} at similarity ${similarity}`)
                               // TODO: react to msg and give points to correct person
-                  channel.send(`All meanings are: \n${solutions.join('\n')}`);
+                  channel.send(`**All meanings are:** \n${solutions.join('\n')}`);
                   time = 1; // don't want to catch it while it's decrementing
-                  await delay(3000);
+                  await delay(3000); // give some time for users to see the meanings
                   break;
                 } else { // for logging
                   if (similarity > maxSimilarityMap.max) {
@@ -225,7 +225,6 @@ client.on('interactionCreate', async interaction => {
           })
           let points = 0;
           let time = 10;
-          let randMeaning;
 
           // do game until msgCollector stops or maxPoints reached
           while (points < 5) {
