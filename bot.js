@@ -253,6 +253,7 @@ client.on('interactionCreate', async interaction => {
             return;
           } else {
             channel.send('Starting!');
+            // TODO: put names of users in game
             hasStarted = true;
             console.log(`Users are ${[...usersInPlay.entries()]}`);
           }
@@ -269,7 +270,7 @@ client.on('interactionCreate', async interaction => {
               winners.push(idToNameMap.get(id));
             }
           }
-          channel.send(`Congratulations, ${winners.join(', ')}. You win with ${max} points!!!`);
+          channel.send(`**Congratulations, ${winners.join(', ')}. You win with ${max} points!!!**`);
         });
       break;
     }
@@ -278,6 +279,7 @@ client.on('interactionCreate', async interaction => {
 async function playHibiscusTea(channel) {
   let teaMsg;
   while (currentPoints < settings.pointsToWin) {
+    addPoint = [];
     answerTime = settings.answerTime;
     ({ solutions, word} = await getRandomMeaningFromDict());
     let timerMsg = await channel.send(':tea:'.repeat(answerTime))
@@ -287,7 +289,7 @@ async function playHibiscusTea(channel) {
       if (answerTime != 0) {
         answerTime -= 1;
       }
-      teaMsg = ':tea:'.repeat(answerTime) + '<:empty:1028438609520508980>'.repeat(10 - answerTime)
+      teaMsg = ':tea:'.repeat(answerTime) + '<:empty:1028438609520508980>'.repeat(settings.answerTime - answerTime)
       await timerMsg.edit(teaMsg)
     }
     if (addPoint.length) {
@@ -299,7 +301,6 @@ async function playHibiscusTea(channel) {
       usersInPlay.set(userId, ++pointsForUser);
       currentPoints = Math.max(currentPoints, pointsForUser);
       channel.send(`good job, ${addPoint[0].name}! You now have ${pointsForUser} points`); // also send potential solutions
-      addPoint = [];
     }
     channel.send(`**All meanings are:** \n${solutions.join('\n')}`);
     await delay(3000); // give some time for users to see the meanings

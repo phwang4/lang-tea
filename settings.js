@@ -1,5 +1,5 @@
 let settings = {
-  pointsToWin: 15,
+  pointsToWin: 5,
   commonness: 20,
   answerTime: 10
 };
