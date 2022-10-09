@@ -72,31 +72,30 @@ function delay(delayMs) {
 }
 
 function getRandomMeaningFromDict() {
-  let meaning;
   let solution;
   return new Promise((resolve, reject) => {
     db.get(`SELECT * FROM 'meanings' WHERE lang=0 ORDER BY RANDOM()`, (err, row) => {
       if (err || !row) {
         reject('Error looking up kana')
         return;
-      } else {
-        meaning = row.meaning;
-      }
-      db.get(`SELECT * FROM 'kanjis' WHERE ent_seq=${row.ent_seq}`, (err1, kanjiRow) => {
+      } 
+      db.get(`SELECT * FROM 'kanjis' WHERE ent_seq=${row.ent_seq}`, async (err1, kanjiRow) => {
         if (err1) {
-          reject(`Error looking up meaning in kanji. ${meaning}`);
+          reject(`Error looking up meaning in kanji. ${solution}`);
           return;
         } else if (!kanjiRow) {
-          db.get(`SELECT * FROM 'kanas' WHERE ent_seq=${row.ent_seq}`, (err1, kanaRow) => {
+          db.get(`SELECT * FROM 'kanas' WHERE ent_seq=${row.ent_seq}`, async (err1, kanaRow) => {
             if (err1) {
-              reject(`Error looking up meaning in kana. ${meaning}`);
+              reject(`Error looking up meaning in kana. ${solution}`);
               return;
             } else {
-              resolve({meaning, solution: kanaRow.kana});
+              solution = await getMeaningsForKana(kanaRow.kana);
+              resolve({word: kanaRow.kana, solution});
             }
           });
         } else {
-          resolve({meaning, solution: kanjiRow.kanji});
+          solution = await getMeaningsForKanji(kanjiRow.kanji);
+          resolve({word: kanjiRow.kanji, solution});
         }
       });
     });
@@ -131,14 +130,15 @@ client.on('interactionCreate', async interaction => {
       break;
     case 'randm':
       try {
-        const {meaning, solution} = await getRandomMeaningFromDict();
-        await interaction.reply(`Here is a random word with one meaning: ${solution} - ${meaning}`);
+        const {solution, word} = await getRandomMeaningFromDict();
+        await interaction.reply(`Here is a random word with one meaning: ${word} - ${solution.join(', ')}`);
       } catch (e) {
         await interaction.reply(`Could not find a random meaning. ${e.message}`)
       }
       break;
     case 'test':
       let usersInPlay = [];
+      let word, solution;
       const exampleEmbed = new EmbedBuilder()
       .setColor(0x0099FF)
       .setTitle('The Hibiscus Teaword will start!')
@@ -194,25 +194,35 @@ client.on('interactionCreate', async interaction => {
               channel.send('All that for this...');
               msgCollector.stop();
             } else {
-              console.log(`Collected ${msg.content}`)
+              console.log(`Collected ${msg.content}, solution is ${solution}`)
+              if (solution.includes(msg.content)) {
+                // TODO: react to msg and give points to correct person
+                points++;
+                channel.send('good job!');
+              }
             }
           })
           let points = 0;
-          let time = 5;
+          let time = 10;
           let randMeaning;
 
           // do game until msgCollector stops or maxPoints reached
           while (points < 5) {
+            time = 10;
+            let temp = await getRandomMeaningFromDict();
+            word = temp.word;
+            solution = temp.solution;
             let timerMsg = await channel.send(':tea:'.repeat(time))
-            randMeaning = await getRandomMeaningFromDict();
-            channel.send()
+            channel.send(`Find one meaning for the word: ${word}`)
             while (time > 0) {
               await delay(1000);
               time -= 1;
-              teaMsg = ':tea:'.repeat(numTeas) + '<:empty:1028438609520508980>'.repeat(5 - time)
+              teaMsg = ':tea:'.repeat(time) + '<:empty:1028438609520508980>'.repeat(10 - time)
               await timerMsg.edit(teaMsg)
             }
           }
+          msgCollector.stop();
+          channel.send(`You did it!`);
         });
       break;
     }
