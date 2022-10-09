@@ -7,7 +7,8 @@ const stringSimilarity = require("string-similarity");
 const {
   boundaries,
   defaultNumTeas, 
-  hibiTeaEmbed
+  hibiTeaEmbed,
+  reactionFilter,
 } = require('./constants');
 
 let { 
@@ -25,8 +26,10 @@ let addPoint;
 let currentPoints;
 let solutions = [];
 let usersInPlay;
+let idToNameMap;
 let word;
 let hasStarted;
+let answerTime;
 
 let db;
 
@@ -204,30 +207,30 @@ client.on('interactionCreate', async interaction => {
     case 'wordgames':
       if (subCommand === 'hibitea') {} // wrap this whole thing when u make another game
       usersInPlay = new Map();
+      idToNameMap = new Map();
       hasStarted = false;
-      addPoint = false;
+      addPoint = [];
       currentPoints = 0;
       const channel = client.channels.cache.get(interaction.channelId)
 
       // reply with embed and wait for reactions
       const message = await interaction.reply({ embeds: [hibiTeaEmbed], fetchReply: true });
       message.react('✅');
-      const filter = (reaction, user) => {
-        return reaction.emoji.name === '✅' && !user.bot;
-      };
-      const collector = message.createReactionCollector({ filter, time: 15000 });
+      const collector = message.createReactionCollector({ reactionFilter, time: defaultNumTeas * 1000 });
+
       collector.on('collect', (reaction, user) => {
         console.log(`Collected ${reaction.emoji.name} from ${user.id}`);
-        usersInPlay.set(user.id, 0);
+        if (!user.bot) { // initial react gets past the filter for some reason
+          usersInPlay.set(user.id, 0);
+          idToNameMap.set(user.id, user.username);
+        }
       });
 
       const msgFilter = (msg) => {
-        /* For some reason, the bot's messages come as the user who sent the initial command but with bot set to true*/
         return usersInPlay.has(msg.author.id) && !msg.author.bot;
       }
       const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
 
-      let answers = [];
       collectMessages(msgCollector, channel);
 
       // send another message afterward and constantly update it
@@ -256,55 +259,70 @@ client.on('interactionCreate', async interaction => {
           collector.stop();
 
           // do game until msgCollector stops or maxPoints reached
-          while (currentPoints < settings.pointsToWin) {
-            settings.answerTime = 10;
-            ({ solutions, word} = await getRandomMeaningFromDict());
-            let timerMsg = await channel.send(':tea:'.repeat(settings.answerTime))
-            channel.send(`Find one meaning for the word: ${word}`)
-            while (settings.answerTime > 0) {
-              await delay(1000);
-              if (settings.answerTime != 0) {
-                settings.answerTime -= 1;
-              }
-              teaMsg = ':tea:'.repeat(settings.answerTime) + '<:empty:1028438609520508980>'.repeat(10 - settings.answerTime)
-              await timerMsg.edit(teaMsg)
-            }
-            if (addPoint) {
-              currentPoints++;
-              channel.send(`good job!`); // also send potential solutions
-              addPoint = false;
-            }
-            channel.send(`**All meanings are:** \n${solutions.join('\n')}`);
-            await delay(3000); // give some time for users to see the meanings
-          }
+          await playHibiscusTea(channel);
+
           msgCollector.stop();
-          channel.send(`You did it!`);
+          let max = Math.max(...usersInPlay.values());
+          let winners = [];
+          for (let id of usersInPlay.keys()) {
+            if (usersInPlay.get(id) === max) {
+              winners.push(idToNameMap.get(id));
+            }
+          }
+          channel.send(`Congratulations, ${winners.join(', ')}. You win with ${max} points!!!`);
         });
       break;
     }
 });
 
-function playHibiscusTea() {
-  
+async function playHibiscusTea(channel) {
+  let teaMsg;
+  while (currentPoints < settings.pointsToWin) {
+    answerTime = settings.answerTime;
+    ({ solutions, word} = await getRandomMeaningFromDict());
+    let timerMsg = await channel.send(':tea:'.repeat(answerTime))
+    channel.send(`Find one meaning for the word: ${word}`)
+    while (answerTime > 0) {
+      await delay(1000);
+      if (answerTime != 0) {
+        answerTime -= 1;
+      }
+      teaMsg = ':tea:'.repeat(answerTime) + '<:empty:1028438609520508980>'.repeat(10 - answerTime)
+      await timerMsg.edit(teaMsg)
+    }
+    if (addPoint.length) {
+      // only want to give point to the first person who responded
+      addPoint.sort((a, b) => { a.time > b.time ? 1 : -1 });
+      addPoint[0].msg.react('🥇');
+      let userId = addPoint[0].userId;
+      let pointsForUser = usersInPlay.get(userId);
+      usersInPlay.set(userId, ++pointsForUser);
+      currentPoints = Math.max(currentPoints, pointsForUser);
+      channel.send(`good job, ${addPoint[0].name}! You now have ${pointsForUser} points`); // also send potential solutions
+      addPoint = [];
+    }
+    channel.send(`**All meanings are:** \n${solutions.join('\n')}`);
+    await delay(3000); // give some time for users to see the meanings
+  }
 }
 
 function collectMessages(msgCollector, channel) {
   msgCollector.on('collect', async (msg) => {
-    console.log(`hasStarted: ${hasStarted} and msg is ${msg.content}`);
     if (hasStarted) {
       if (msg.content === '$exitgame') {
         channel.send('All that for this...');
         msgCollector.stop();
         currentPoints = settings.pointsToWin;
+        answerTime = 0;
       } else {
         let similarity = 0;
         let maxSimilarityMap = {max: 0, word: ''};
         for (meaning of solutions) {
           similarity = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
           if (similarity >= .75) {
-            addPoint = true;
-            // TODO: react to msg and give points to correct person
-            settings.answerTime = 0;
+            addPoint.push({userId: msg.author.id, time: Date.now(), name: msg.author.username, msg});
+            /* will end the round in playHibiscusTea's while loop */
+            answerTime = 0;
             break;
           }
         }
@@ -314,16 +332,22 @@ function collectMessages(msgCollector, channel) {
       let cmd = args[0];
       switch(cmd) {
         case '$pts':
-          if (args[1] && args[1] >=1 && args[1] <= 100) {
+          if (args[1] && args[1] >= boundaries.pointsMin && args[1] <= boundaries.pointsMax) {
             settings.pointsToWin = args[1];
             channel.send(`Number of points needed to win is now: ${args[1]}`);
           }
           break;
         case '$time':
-          console.log('reached time');
+          if (args[1] && args[1] >= boundaries.timeMin && args[1] <= boundaries.timeMax) {
+            settings.answerTime = args[1];
+            channel.send(`You will have ${args[1]} seconds to answer the questions.`);
+          }
           break;
         case '$cmn':
-          console.log('reached cmn');
+          if (args[1] && args[1] >= boundaries.commonnessMin && args[1] <= boundaries.commonnessMax) {
+            settings.commonness = args[1];
+            channel.send(`Will now only be using kanji with commonness of: ${args[1]} or more`);
+          }
           break;
       }
     }
