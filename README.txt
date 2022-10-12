@@ -10,12 +10,13 @@ Functions:
  run "node deploy-commands.js" whenever you want to update commands
  Requires node v16.6 or higher for discord api
 
- jmdict is too large so you'll have to download it manually from https://github.com/PSeitz/japanese-dictionary/releases/tag/1.0
+ Using zhlib dictionary based on CC-Cedict, https://github.com/patarapolw/zhlib/blob/master/zhlib/dict.db, will have to download separately.
+ 
  Additionally, you'll need to create a config.json with the following:
 
  {
-  "token": "<ask patrick for token>",
-  "clientId": "1028344278851797114",
+  "token": "<ask for token>",
+  "clientId": "<ask for cID>",
 	"guildId": "687718497903443989"
 }
  
