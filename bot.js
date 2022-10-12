@@ -36,31 +36,25 @@ let db;
 // When the client is ready, run this code (only once)
 client.once('ready', () => {
 	console.log('Ready!');
-  db = new sqlite3.Database(path.join(__dirname, 'jmdict.sqlite'), sqlite3.OPEN_READONLY, () => {
+  db = new sqlite3.Database(path.join(__dirname, 'dict.db'), sqlite3.OPEN_READONLY, () => {
     console.log('database loaded');
   });
 });
 
-// TODO: add readings and conjugations for kanji as separate optional parameters
-function getMeaningsForKanji(kanji) {
+// TODO: add pinyin for hanzi as separate optional parameters
+function getMeaningsForHanzi(hanzi) {
   let meanings = [];
   return new Promise((resolve, reject) => {
-    db.get(`SELECT * FROM 'kanjis' WHERE kanji='${kanji}'`, (err, row) => {
-      if (err || !row) {
-        reject('Error looking up kanji')
-        return;
+    db.all(`SELECT * FROM 'vocab' WHERE simplified='${hanzi}'`, (err, rows) => {
+      for (let row of rows) {
+        meanings.push(row.english)
       }
-      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
-        for (let row of rows) {
-          meanings.push(row.meaning)
-        }
-        if (err1 || !rows) {
-          reject(`Error looking up meaning`);
-          return;
-        } else {
-          resolve(meanings);
-        }
-      });
+      if (err || !rows) {
+        reject('Error looking up hanzi')
+        return;
+      } else {
+        resolve(meanings[0].split("/"));
+      }
     });
   })
 }
@@ -88,18 +82,46 @@ function getMeaningsForKana(kana) {
   })
 }
 
-function getMeaningsForEntSeq(ent_seq) {
+function getMeaningsForID(vid) {
   let meanings = [];
   return new Promise((resolve, reject) => {
-    db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${ent_seq} AND lang=0`, (err1, rows) => {
-      for (let row of rows) {
-        meanings.push(row.meaning)
-      }
-      if (err1 || !rows) {
+    db.get(`SELECT * FROM 'vocab' WHERE id=${vid}`, (err1, row) => {
+      meanings.push(row.english)
+      if (err1 || !row) {
         reject(`Error looking up meaning`);
         return;
       } else {
-        resolve(meanings);
+        resolve(meanings[0].split("/"));
+      }
+    });
+  })
+}
+
+function getHanziForID(vid) {
+  let hanzi = [];
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'vocab' WHERE id=${vid}`, (err1, row) => {
+      hanzi.push(row.simplified)
+      if (err1 || !row) {
+        reject(`Error looking up meaning`);
+        return;
+      } else {
+        resolve(hanzi);
+      }
+    });
+  })
+}
+
+function getPinyinForID(vid) {
+  let pinyin = [];
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'vocab' WHERE id=${vid}`, (err1, row) => {
+      pinyin.push(row.pinyin)
+      if (err1 || !row) {
+        reject(`Error looking up meaning`);
+        return;
+      } else {
+        resolve(pinyin);
       }
     });
   })
@@ -112,17 +134,20 @@ function delay(delayMs) {
 // update embed for commonness number
 function getRandomMeaningFromDict() {
   let solutions;
+  let simp;
+  let pinyin;
   return new Promise((resolve, reject) => {
     if (Math.random() > 0) {
-      db.get(`SELECT * FROM 'kanjis' WHERE commonness > ${settings.commonness} ORDER BY RANDOM()`, async (err, row) => {
+      db.get(`SELECT * FROM 'vocab_tag_through' WHERE tag_id=${settings.hsk} ORDER BY RANDOM()`, async (err, row) => {
         if (err || !row) {
-          reject('Error looking up kanji')
+          reject('Error looking up hanzi')
           return;
         } 
         try {
-          solutions = await getMeaningsForEntSeq(row.ent_seq);
-          // row.id -> kanji_readings.kanji_id -> kanji_readings.kana_id??
-          resolve({word: row.kanji, solutions});
+          simp = await getHanziForID(row.vocab_id);
+          solutions = await getMeaningsForID(row.vocab_id);
+          pinyin = await getPinyinForID(row.vocab_id);
+          resolve({word: simp, solutions, pinyin});
         } catch(e) {
           reject(e)
         }
@@ -136,38 +161,13 @@ function getRandomMeaningFromDict() {
           return;
         } 
         try {
-          solutions = await getMeaningsForEntSeq(row.ent_seq);
-          resolve({word: row.kana, solutions});
+          solutions = await getMeaningsForHanzi(row.simplified);
+          resolve({word: row.simplified, solutions, pinyin});
         } catch(e) {
           reject(e)
         }
       });
     }
-    // db.get(`SELECT * FROM 'meanings' WHERE lang=0 ORDER BY RANDOM()`, (err, row) => {
-    //   if (err || !row) {
-    //     reject('Error looking up kana')
-    //     return;
-    //   } 
-    //   db.get(`SELECT * FROM 'kanjis' WHERE ent_seq=${row.ent_seq}`, async (err1, kanjiRow) => {
-    //     if (err1) {
-    //       reject(`Error looking up meaning in kanji. ${solution}`);
-    //       return;
-    //     } else if (!kanjiRow) {
-    //       db.get(`SELECT * FROM 'kanas' WHERE ent_seq=${row.ent_seq}`, async (err1, kanaRow) => {
-    //         if (err1) {
-    //           reject(`Error looking up meaning in kana. ${solution}`);
-    //           return;
-    //         } else {
-    //           solution = await getMeaningsForKana(kanaRow.kana);
-    //           resolve({word: kanaRow.kana, solution});
-    //         }
-    //       });
-    //     } else {
-    //       solution = await getMeaningsForKanji(kanjiRow.kanji);
-    //       resolve({word: kanjiRow.kanji, solution});
-    //     }
-    //   });
-    // });
   });
 }
 
@@ -178,16 +178,16 @@ client.on('interactionCreate', async interaction => {
   const subCommand = options._subcommand;
 
   switch (commandName) {
-    case 'kanji':
-      let kanji = options.getString('kanji');
+    case 'hanzi':
+      let hanzi = options.getString('hanzi');
       try {
-        let meanings = await getMeaningsForKanji(kanji);
-        await interaction.reply(`**Definitions for ${kanji}:**\n${meanings.join('\n')}`);
+        let meanings = await getMeaningsForHanzi(hanzi);
+        await interaction.reply(`**Definitions for ${hanzi}:**\n${meanings.join('\n')}`);
       } catch (e) {
-        await interaction.reply(`Could not find meanings for the kanji: ${kanji}`)
+        await interaction.reply(`Could not find meanings for the hanzi: ${hanzi}`)
       }
       break;
-    case 'kana':
+    case 'bruh':
       let kana = options.getString('kana');
       try {
         let meanings = await getMeaningsForKana(kana);
@@ -205,7 +205,7 @@ client.on('interactionCreate', async interaction => {
       }
       break;
     case 'wordgames':
-      if (subCommand === 'hibitea') {} // wrap this whole thing when u make another game
+      if (subCommand === 'juhuatea') {} // wrap this whole thing when u make another game
       usersInPlay = new Map();
       idToNameMap = new Map();
       hasStarted = false;
@@ -281,7 +281,7 @@ async function playHibiscusTea(channel) {
   while (currentPoints < settings.pointsToWin) {
     addPoint = [];
     answerTime = settings.answerTime;
-    ({ solutions, word} = await getRandomMeaningFromDict());
+    ({ solutions, word, pinyin} = await getRandomMeaningFromDict());
     let timerMsg = await channel.send(':tea:'.repeat(answerTime))
     channel.send(`Find one meaning for the word: ${word}`)
     while (answerTime > 0) {
@@ -303,6 +303,7 @@ async function playHibiscusTea(channel) {
       channel.send(`good job, ${addPoint[0].name}! You now have ${pointsForUser} points`); // also send potential solutions
     }
     channel.send(`**All meanings are:** \n${solutions.join('\n')}`);
+    channel.send(`**Pinyin:** \n${pinyin}\n`)
     await delay(3000); // give some time for users to see the meanings
   }
 }
@@ -316,11 +317,15 @@ function collectMessages(msgCollector, channel) {
         currentPoints = settings.pointsToWin;
         answerTime = 0;
       } else {
-        let similarity = 0;
+        let similarity1 = 0;
+        let similarity2 = 0;
         let maxSimilarityMap = {max: 0, word: ''};
         for (meaning of solutions) {
-          similarity = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
-          if (similarity >= .75) {
+          similarity1 = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
+          if (meaning.indexOf("(") > 0) {
+            similarity2 = stringSimilarity.compareTwoStrings(meaning.toLowerCase().split("(")[0], msg.content.toLowerCase())
+          }
+          if (Math.max(similarity1,similarity2) >= .65) {
             addPoint.push({userId: msg.author.id, time: Date.now(), name: msg.author.username, msg});
             /* will end the round in playHibiscusTea's while loop */
             answerTime = 0;
@@ -344,10 +349,10 @@ function collectMessages(msgCollector, channel) {
             channel.send(`You will have ${args[1]} seconds to answer the questions.`);
           }
           break;
-        case '$cmn':
-          if (args[1] && args[1] >= boundaries.commonnessMin && args[1] <= boundaries.commonnessMax) {
-            settings.commonness = args[1];
-            channel.send(`Will now only be using kanji with commonness of: ${args[1]} or more`);
+        case '$hsk':
+          if (args[1] && args[1] >= boundaries.hskMin && args[1] <= boundaries.hskMax) {
+            settings.hsk = args[1];
+            channel.send(`Will now only be using words from hsk: ${args[1]}`);
           }
           break;
       }

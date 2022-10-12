@@ -1,6 +1,6 @@
 let settings = {
   pointsToWin: 5,
-  commonness: 20,
+  hsk: 4,
   answerTime: 10
 };
 

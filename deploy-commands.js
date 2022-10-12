@@ -3,29 +3,29 @@ const { clientId, guildId, token } = require('./config.json');
 
 const commands = [
 	new SlashCommandBuilder()
-    .setName('kanji')
-    .setDescription('Replies with the definitions for that kanji.')
+    .setName('hanzi')
+    .setDescription('Replies with the definitions for the hanzi.')
     .addStringOption(option => 
-      option.setName('kanji')
-        .setDescription('The kanji to look up')
+      option.setName('hanzi')
+        .setDescription('The hanzi to look up')
         .setRequired(true)),
   new SlashCommandBuilder()
-    .setName('kana')
-    .setDescription('Replies with the definitions for a word written in kana.')
+    .setName('bruh')
+    .setDescription('WIP')
     .addStringOption(option => 
-      option.setName('kana')
-        .setDescription('The kana to look up')
+      option.setName('pinyin')
+        .setDescription('The pinyin to look up')
         .setRequired(true)),
   new SlashCommandBuilder()
-      .setName('randm')
-      .setDescription('Replies with a random meaning.'),
+      .setName('randzw')
+      .setDescription('Replies with a random character.'),
   new SlashCommandBuilder()
       .setName('wordgames')
-      .setDescription('Mudae tea-like game for Japanese-English definitions')
+      .setDescription('WIP Mudae tea-like game')
       .addSubcommand(subCommand => 
         subCommand
-          .setName('hibitea')
-          .setDescription('Mudae tea-like game for Japanese-English definitions'))
+          .setName('juhuatea')
+          .setDescription('WIP Mudae tea-like game'))
 ]
 	.map(command => command.toJSON());
 
