@@ -20,12 +20,19 @@ const commands = [
       .setName('randm')
       .setDescription('Replies with a random meaning.'),
   new SlashCommandBuilder()
+      .setName('randr')
+      .setDescription('Replies with a random reading.'),
+  new SlashCommandBuilder()
       .setName('wordgames')
       .setDescription('Mudae tea-like game for Japanese-English definitions')
       .addSubcommand(subCommand => 
         subCommand
           .setName('hibitea')
-          .setDescription('Mudae tea-like game for Japanese-English definitions'))
+          .setDescription('Find a right meaning for the word'))
+      .addSubcommand(subCommand => 
+        subCommand
+          .setName('reading')
+          .setDescription('Find a right reading for the word'))
 ]
 	.map(command => command.toJSON());
 

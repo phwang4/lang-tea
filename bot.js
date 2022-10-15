@@ -8,6 +8,7 @@ const {
   boundaries,
   defaultNumTeas, 
   hibiTeaEmbed,
+  readingEmbed,
   reactionFilter,
 } = require('./constants');
 
@@ -41,134 +42,9 @@ client.once('ready', () => {
   });
 });
 
-// TODO: add readings and conjugations for kanji as separate optional parameters
-function getMeaningsForKanji(kanji) {
-  let meanings = [];
-  return new Promise((resolve, reject) => {
-    db.get(`SELECT * FROM 'kanjis' WHERE kanji='${kanji}'`, (err, row) => {
-      if (err || !row) {
-        reject('Error looking up kanji')
-        return;
-      }
-      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
-        for (let row of rows) {
-          meanings.push(row.meaning)
-        }
-        if (err1 || !rows) {
-          reject(`Error looking up meaning`);
-          return;
-        } else {
-          resolve(meanings);
-        }
-      });
-    });
-  })
-}
-
-function getMeaningsForKana(kana) {
-  let meanings = [];
-  return new Promise((resolve, reject) => {
-    db.get(`SELECT * FROM 'kanas' WHERE kana='${kana}'`, (err, row) => {
-      if (err || !row) {
-        reject('Error looking up kana')
-        return;
-      }
-      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
-        for (let row of rows) {
-          meanings.push(row.meaning)
-        }
-        if (err1 || !rows) {
-          reject(`Error looking up meaning`);
-          return;
-        } else {
-          resolve(meanings);
-        }
-      });
-    });
-  })
-}
-
-function getMeaningsForEntSeq(ent_seq) {
-  let meanings = [];
-  return new Promise((resolve, reject) => {
-    db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${ent_seq} AND lang=0`, (err1, rows) => {
-      for (let row of rows) {
-        meanings.push(row.meaning)
-      }
-      if (err1 || !rows) {
-        reject(`Error looking up meaning`);
-        return;
-      } else {
-        resolve(meanings);
-      }
-    });
-  })
-}
 
 function delay(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-// update embed for commonness number
-function getRandomMeaningFromDict() {
-  let solutions;
-  return new Promise((resolve, reject) => {
-    if (Math.random() > 0) {
-      db.get(`SELECT * FROM 'kanjis' WHERE commonness > ${settings.commonness} ORDER BY RANDOM()`, async (err, row) => {
-        if (err || !row) {
-          reject('Error looking up kanji')
-          return;
-        } 
-        try {
-          solutions = await getMeaningsForEntSeq(row.ent_seq);
-          // row.id -> kanji_readings.kanji_id -> kanji_readings.kana_id??
-          resolve({word: row.kanji, solutions});
-        } catch(e) {
-          reject(e)
-        }
-
-
-      });
-    } else { // Not reached atm, some ent_seq are in both kana and kanji dict in which case we only want the kanji version
-      db.get(`SELECT * FROM 'kanas' WHERE commonness > ${settings.commonness} ORDER BY RANDOM()`, async (err, row) => {
-        if (err || !row) {
-          reject('Error looking up kana')
-          return;
-        } 
-        try {
-          solutions = await getMeaningsForEntSeq(row.ent_seq);
-          resolve({word: row.kana, solutions});
-        } catch(e) {
-          reject(e)
-        }
-      });
-    }
-    // db.get(`SELECT * FROM 'meanings' WHERE lang=0 ORDER BY RANDOM()`, (err, row) => {
-    //   if (err || !row) {
-    //     reject('Error looking up kana')
-    //     return;
-    //   } 
-    //   db.get(`SELECT * FROM 'kanjis' WHERE ent_seq=${row.ent_seq}`, async (err1, kanjiRow) => {
-    //     if (err1) {
-    //       reject(`Error looking up meaning in kanji. ${solution}`);
-    //       return;
-    //     } else if (!kanjiRow) {
-    //       db.get(`SELECT * FROM 'kanas' WHERE ent_seq=${row.ent_seq}`, async (err1, kanaRow) => {
-    //         if (err1) {
-    //           reject(`Error looking up meaning in kana. ${solution}`);
-    //           return;
-    //         } else {
-    //           solution = await getMeaningsForKana(kanaRow.kana);
-    //           resolve({word: kanaRow.kana, solution});
-    //         }
-    //       });
-    //     } else {
-    //       solution = await getMeaningsForKanji(kanjiRow.kanji);
-    //       resolve({word: kanjiRow.kanji, solution});
-    //     }
-    //   });
-    // });
-  });
 }
 
 client.on('interactionCreate', async interaction => {
@@ -199,13 +75,38 @@ client.on('interactionCreate', async interaction => {
     case 'randm':
       try {
         const {solutions, word} = await getRandomMeaningFromDict();
-        await interaction.reply(`Here is a random word with one meaning: ${word} - ${solution.join(', ')}`);
+        await interaction.reply(`Here is a random word with meanings: ${word} - ${solutions.join(', ')}`);
       } catch (e) {
         await interaction.reply(`Could not find a random meaning. ${e.message}`)
       }
       break;
+    case 'randr':
+      try {
+        const {solutions, word} = await getRandomReadingFromDict();
+        await interaction.reply(`Here is a random word with readings: ${word} - ${solutions.join(', ')}`);
+      } catch (e) {
+        await interaction.reply(`Could not find a random reading. ${e.message}`)
+      }
+      break;
     case 'wordgames':
-      if (subCommand === 'hibitea') {} // wrap this whole thing when u make another game
+      let embed;
+      let lookupFunc;
+      let similarityMinimum;
+      let gameMsg;
+      switch(subCommand) {
+        case 'hibitea':
+          embed = hibiTeaEmbed;
+          lookupFunc = getRandomMeaningFromDict;
+          similarityMinimum = 0.75;
+          gameMsg = `Find one meaning for the word: `;
+          break;
+        case 'reading':
+          embed = readingEmbed;
+          lookupFunc = getRandomReadingFromDict;
+          similarityMinimum = .9;
+          gameMsg = `Find one reading for the word: `
+          break;
+      }
       usersInPlay = new Map();
       idToNameMap = new Map();
       hasStarted = false;
@@ -214,7 +115,7 @@ client.on('interactionCreate', async interaction => {
       const channel = client.channels.cache.get(interaction.channelId)
 
       // reply with embed and wait for reactions
-      const message = await interaction.reply({ embeds: [hibiTeaEmbed], fetchReply: true });
+      const message = await interaction.reply({ embeds: [embed], fetchReply: true });
       message.react('✅');
       const collector = message.createReactionCollector({ reactionFilter, time: defaultNumTeas * 1000 });
 
@@ -231,7 +132,7 @@ client.on('interactionCreate', async interaction => {
       }
       const msgCollector = interaction.channel.createMessageCollector({ filter: msgFilter })
 
-      collectMessages(msgCollector, channel);
+      collectMessages(msgCollector, channel, similarityMinimum);
 
       // send another message afterward and constantly update it
       let numTeas = defaultNumTeas;
@@ -260,7 +161,7 @@ client.on('interactionCreate', async interaction => {
           collector.stop();
 
           // do game until msgCollector stops or maxPoints reached
-          await playHibiscusTea(channel);
+          await playTeaGame(channel, gameMsg, lookupFunc);
 
           msgCollector.stop();
           let max = Math.max(...usersInPlay.values());
@@ -276,14 +177,14 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-async function playHibiscusTea(channel) {
+async function playTeaGame(channel, msg, lookupFunc) {
   let teaMsg;
   while (currentPoints < settings.pointsToWin) {
     addPoint = [];
     answerTime = settings.answerTime;
-    ({ solutions, word} = await getRandomMeaningFromDict());
+    ({ solutions, word} = await lookupFunc(settings.commonness));
     let timerMsg = await channel.send(':tea:'.repeat(answerTime))
-    channel.send(`Find one meaning for the word: ${word}`)
+    channel.send(msg + word)
     while (answerTime > 0) {
       await delay(1000);
       if (answerTime != 0) {
@@ -307,7 +208,7 @@ async function playHibiscusTea(channel) {
   }
 }
 
-function collectMessages(msgCollector, channel) {
+function collectMessages(msgCollector, channel, similarityMinimum) {
   msgCollector.on('collect', async (msg) => {
     if (hasStarted) {
       if (msg.content === '$exitgame') {
@@ -320,7 +221,7 @@ function collectMessages(msgCollector, channel) {
         let maxSimilarityMap = {max: 0, word: ''};
         for (meaning of solutions) {
           similarity = stringSimilarity.compareTwoStrings(meaning.toLowerCase(), msg.content.toLowerCase())
-          if (similarity >= .75) {
+          if (similarity >= similarityMinimum) {
             addPoint.push({userId: msg.author.id, time: Date.now(), name: msg.author.username, msg});
             /* will end the round in playHibiscusTea's while loop */
             answerTime = 0;
@@ -357,4 +258,173 @@ function collectMessages(msgCollector, channel) {
 
 
 client.login(token);
+
+
+
+
+// =================================================================================================
+// Database Functions
+// =================================================================================================
+
+function getMeaningsForKanji(kanji) {
+  let meanings = [];
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'kanjis' WHERE kanji='${kanji}'`, (err, row) => {
+      if (err || !row) {
+        reject('Error looking up kanji')
+        return;
+      }
+      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
+        for (let row of rows) {
+          meanings.push(row.meaning)
+        }
+        if (err1 || !rows) {
+          reject(`Error looking up meaning`);
+        } else {
+          resolve(meanings);
+        }
+      });
+    });
+  })
+}
+
+function getMeaningsForKana(kana) {
+  let meanings = [];
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT * FROM 'kanas' WHERE kana='${kana}'`, (err, row) => {
+      if (err || !row) {
+        reject('Error looking up kana')
+        return;
+      }
+      db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${row.ent_seq} AND lang=0`, (err1, rows) => {
+        for (let row of rows) {
+          meanings.push(row.meaning)
+        }
+        if (err1 || !rows) {
+          reject(`Error looking up meaning`);
+        } else {
+          resolve(meanings);
+        }
+      });
+    });
+  })
+}
+
+function getMeaningsForEntSeq(ent_seq) {
+  let meanings = [];
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM 'meanings' WHERE ent_seq=${ent_seq} AND lang=0`, (err1, rows) => {
+      for (let row of rows) {
+        meanings.push(row.meaning)
+      }
+      if (err1 || !rows) {
+        reject(`Error looking up meaning`);
+      } else {
+        resolve(meanings);
+      }
+    });
+  })
+}
+
+function getKanaIdsForId(id) {
+  let ids = [];
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM 'kanji_readings' WHERE kanji_id=${id}`, (err, rows) => {
+      for (let row of rows) {
+        ids.push(row.kana_id)
+      }
+      if (err || !rows) {
+        reject(`Error looking up reading`);
+        return;
+      }
+      resolve(ids);
+    });
+  })
+}
+
+function getReadingsForKanaIds(ids) {
+  let readings = [];
+  return new Promise((resolve, reject) => {
+    let sqlCmd = `SELECT * FROM 'kanas' WHERE `;
+    let first = true;
+    for (let id of ids) {
+      if (first) {
+        sqlCmd += `_id=${id}`;
+        first = false;
+      }
+      else {
+        sqlCmd += ` OR _id=${id}`
+      }
+    }
+    db.all(sqlCmd, (err, rows) => {
+      if (!rows) {
+        reject(`Could not find readings with cmd ${sqlCmd} and ids ${ids}`);
+        return;
+      }
+      for (let row of rows) {
+        readings.push(row.romaji.toLowerCase())
+      }
+      if (!readings) {
+        reject(`Could not find readings for ${ids}`);
+        return;
+      }
+      resolve(readings);
+    });
+  });
+}
+
+function getRandomMeaningFromDict(commonness = settings.commonness) {
+  let solutions;
+  return new Promise((resolve, reject) => {
+    if (Math.random() > 0) {
+      db.get(`SELECT * FROM 'kanjis' WHERE commonness > ${commonness} ORDER BY RANDOM()`, async (err, row) => {
+        if (err || !row) {
+          reject('Error looking up kanji')
+          return;
+        } 
+        try {
+          solutions = await getMeaningsForEntSeq(row.ent_seq);
+          // row.id -> kanji_readings.kanji_id -> kanji_readings.kana_id??
+          resolve({word: row.kanji, solutions});
+        } catch(e) {
+          reject(e)
+        }
+
+
+      });
+    } else { // Not reached atm, some ent_seq are in both kana and kanji dict in which case we only want the kanji version
+      db.get(`SELECT * FROM 'kanas' WHERE commonness > ${commonness} ORDER BY RANDOM()`, async (err, row) => {
+        if (err || !row) {
+          reject('Error looking up kana')
+          return;
+        } 
+        try {
+          solutions = await getMeaningsForEntSeq(row.ent_seq);
+          resolve({word: row.kana, solutions});
+        } catch(e) {
+          reject(e)
+        }
+      });
+    }
+  });
+}
+
+function getRandomReadingFromDict(commonness = settings.commonness) {
+  let solutions;
+  return new Promise((resolve, reject) => {
+      db.get(`SELECT * FROM 'kanjis' WHERE commonness > ${commonness} ORDER BY RANDOM()`, async (err, row) => {
+        if (err || !row) {
+          reject('Error looking up kanji')
+          return;
+        } 
+        try {
+          let ids = await getKanaIdsForId(row._id);
+          solutions = await getReadingsForKanaIds(ids);
+          resolve({word: row.kanji, solutions});
+        } catch(e) {
+          reject(e);
+        }
+      });
+  });
+}
 
