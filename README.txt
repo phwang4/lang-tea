@@ -2,7 +2,7 @@ Language minigame bot for discord
 
 Functions:
 
- - Pick a random word and get it's reading or meaning
+ - Pick a random word and get its reading or meaning
  - Play a game using the above two functions, similar to mudae's tea games 
  - supported languages (japanese, chinese)
 
